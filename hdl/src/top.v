@@ -57,10 +57,10 @@ module top(
     // assign w_psram_clk = w_psram_clk;
 
     wire [7:0] w_spi_data;
-    wire       w_spi_dc;
+    wire       w_spi_csrelased;
     wire       w_spi_rxdone;
     spi_slave u_spi_slave(
-        .i_clk(XTAL27M),
+        .i_clk(w_psram_clk),
         .i_rst_n(w_rst_n),
 
         .i_spi_clk(SPI_SCK),
@@ -69,7 +69,7 @@ module top(
 
         // output
         .o_data(w_spi_data),
-        .o_dc(w_spi_dc),
+        .o_csreleased(w_spi_csrelased),
         .o_rxdone(w_spi_rxdone)
     );
 
@@ -80,11 +80,11 @@ module top(
     wire w_sram_write_req;
     wire w_sram_waddr_set_req;
     inst_dec_reg u_command_dec(
-        .i_clk(XTAL27M),
+        .i_clk(w_psram_clk),
         .i_rst_n(w_rst_n),
 
         .i_spi_data(w_spi_data),
-        .i_spi_dc(w_spi_dc),
+        .i_spi_csreleased(w_spi_csrelased),
         .i_spi_rxdone(w_spi_rxdone),
 
         .o_pixel_data(w_pixel_data),   // 画素データ
@@ -94,9 +94,7 @@ module top(
         .o_sram_clr_req(w_sram_clr_req),         // SRAM ALLクリアリクエスト
         .o_sram_write_req(w_sram_write_req),       // SRAM画素データ書き込みリクエスト
         .o_sram_waddr_set_req(w_sram_waddr_set_req),   // SRAM書き込みアドレス設定リクエスト
-        .o_dispOn(),
-
-        .o_pwm_duty()
+        .o_dispOn()
     );
 
     wire        w_fb_write_req;
@@ -105,7 +103,7 @@ module top(
     wire [63:0] w_fb_write_data;
     wire  [7:0] w_fb_write_data_mask;
     framebuffer_writer u_dut(
-        .i_clk(XTAL27M),
+        .i_clk(w_psram_clk),
         .i_rst_n(w_rst_n),
 
         .i_pixel_data(w_pixel_data),   // 画素データ
