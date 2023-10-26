@@ -2,7 +2,7 @@
 ipc_version=4
 file=psram_memory_interface_hs
 module=PSRAM_Memory_Interface_HS_Top
-target_device=gw1nsr4c-000
+target_device=gw1nr9c-004
 type=psram_hs
 version=1.0
 
