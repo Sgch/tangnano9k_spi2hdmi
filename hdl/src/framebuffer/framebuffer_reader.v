@@ -2,148 +2,171 @@ module framebuffer_reader (
     input   wire            i_clk,
     input   wire            i_rst_n,
 
-    input   wire            i_active,
+    // Registers
+    input   wire    [10:0]  i_reg_width,       // 横有効ピクセル(Max 2048, 32 align)
+    input   wire    [10:0]  i_reg_start_line,  // 読み取り開始ライン(-1)
+    input   wire    [10:0]  i_reg_end_line,    // 読み取り終了ライン(-1)
+
+    // PSRAM bus
+    output  wire            o_psram_cmd_req,
+    input   wire            i_psram_cmd_gnt,
+    output  wire    [20:0]  o_psram_addr,
+    input   wire    [63:0]  i_psram_rd_data,
+    input   wire            i_psram_rd_data_valid,
+
+    // Video sync in
+    input   wire            i_pixel_clk,
+    input   wire            i_pixel_rst_n,
     input   wire            i_hsync,
     input   wire            i_vsync,
-    input   wire            i_hblank,
-    input   wire            i_vblank,
+    input   wire            i_active,
 
+    // Video sync/data out
     output  wire    [15:0]  o_rgb_data,
-    output  wire            o_active,
     output  wire            o_hsync,
     output  wire            o_vsync,
-    output  wire            o_hblank,
-    output  wire            o_vblank,
-
-    // Memory if
-    input   wire            i_psram_clk, // i_clk <= i_psram_clk
-    output  wire            o_psram_read_req,
-    input   wire            i_psram_read_gnt,
-    output  wire    [20:0]  o_psram_addr,
-    input   wire    [63:0]  i_psram_data,
-    input   wire            i_psram_data_valid
+    output  wire            o_active
 );
-    parameter H_ACTIVE = 11'd1280;
 
-    parameter PSRAM_BURST = 21'd32;           // PSRAM バースト数
-    parameter PSRAM_ADDR = 21'h00_0000;
-
-    localparam PSRAM_READ_COUNT = {10'd0, H_ACTIVE} / PSRAM_BURST;
-
-    // 同期化 Pixel clk => PSRAM clk
-    reg [1:0] r_psram_vblank_ff;
-    reg [1:0] r_psram_hsync_ff;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_psram_vblank_ff <= 2'b00;
-            r_psram_hsync_ff <= 2'b00;
-        end
-        else begin
-            r_psram_vblank_ff <= {r_psram_vblank_ff[0], i_vblank};
-            r_psram_hsync_ff <= {r_psram_hsync_ff[0], i_hsync};
-        end
-    end
-    wire w_psram_vblank;
-    wire w_psram_hsync;
-    assign w_psram_vblank = r_psram_vblank_ff[1];
-    assign w_psram_hsync = r_psram_hsync_ff[1];
-
-    // gnt dly
-    reg r_gnt_dly, r_gnt_dly2;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_gnt_dly <= 1'b0;
-            r_gnt_dly2 <= 1'b0;
-        end
-        else begin
-            r_gnt_dly <= i_psram_read_gnt;
-            r_gnt_dly2 <= r_gnt_dly;
-        end
+    reg [2:0] r_sync_hsync;
+    reg [2:0] r_sync_vsync;
+    always @(posedge i_clk) begin
+        r_sync_hsync <= { r_sync_hsync[1:0], i_hsync };
+        r_sync_vsync <= { r_sync_vsync[1:0], i_vsync };
     end
 
-    // 有効ラインのhsyncよりpsram読み出しパルス生成
-    reg [1:0] r_psram_start_pls_ff;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
+    wire   w_hsync_pls;
+    assign w_hsync_pls = (r_sync_hsync[2:1] == 2'b01);
+    wire   w_vsync_pls;
+    assign w_vsync_pls = (r_sync_vsync[2:1] == 2'b01);
+    wire   w_vsync;
+    assign w_vsync = r_sync_vsync[1];
+
+    // 読み出しラインカウント
+    reg [10:0] r_line_cnt;
+    always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
-            r_psram_start_pls_ff <= 2'b00;
+            r_line_cnt <= 11'd0;
         end
-        else begin
-            r_psram_start_pls_ff <= {r_psram_start_pls_ff[0], (~w_psram_vblank & w_psram_hsync)};
+        else if (w_vsync) begin
+            r_line_cnt <= 11'd0;
+        end
+        else if (w_hsync_pls) begin
+            r_line_cnt <= r_line_cnt + 11'd1;
         end
     end
-    wire w_psram_start_pls;
-    assign w_psram_start_pls = (r_psram_start_pls_ff == 2'b01);
+    wire   w_read_line;
+    assign w_read_line = (r_line_cnt >= i_reg_start_line) & (r_line_cnt < i_reg_end_line);
 
-    // PSRAM読み出しアドレス
+    // PSRAM ステートマシーン
+    localparam ST_IDLE      = 2'd0;
+    localparam ST_READ_LINE = 2'd1;
+    reg [ 1:0] r_state;
+    reg [10:0] r_read_pixel_cnt;
+    always @(posedge i_clk) begin
+        case (r_state)
+        ST_IDLE: begin
+            r_read_pixel_cnt <= 11'd0;
+
+            if (w_hsync_pls & w_read_line) begin
+                r_state <= ST_READ_LINE;
+            end
+        end
+        ST_READ_LINE: begin
+            if (r_read_pixel_cnt >= i_reg_width) begin
+                r_state <= ST_IDLE;
+            end
+            else if (i_psram_cmd_gnt) begin
+                r_read_pixel_cnt <= r_read_pixel_cnt + 11'd32;
+            end
+        end
+        default: r_state <= ST_IDLE;
+        endcase
+    end
+
+    // PSRAM 読み出しアドレス
     reg [20:0] r_psram_addr;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
+    always @(posedge i_clk) begin
+        if (w_vsync) begin
             r_psram_addr <= 21'd0;
         end
-        else if (w_psram_vblank) begin
-            r_psram_addr <= PSRAM_ADDR;
-        end
-        else if (r_gnt_dly2) begin
-            r_psram_addr <= r_psram_addr + PSRAM_BURST;
+        else if (i_psram_cmd_gnt) begin
+            r_psram_addr <= r_psram_addr + 21'd32;
         end
     end
     assign o_psram_addr = r_psram_addr;
 
-    // PSRAM 1ライン分のカウンタ
-    reg [21:0] r_psram_read_count;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_psram_read_count <= 0;
-        end
-        else if (r_psram_read_count >= PSRAM_READ_COUNT) begin
-            r_psram_read_count <= 0;
-        end
-        else if (r_gnt_dly2) begin
-            r_psram_read_count <= r_psram_read_count + 22'd1;
-        end
-    end
-
-    // PSRAM読み出しリクエスト
+    // PSRAM 読み出し要求
     reg r_psram_req;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_psram_req <= 1'b0;
-        end
-        else if (r_psram_req) begin
-            r_psram_req <= 1'b0;
-        end
-        else if ((w_psram_start_pls || r_gnt_dly2) && (r_psram_read_count < PSRAM_READ_COUNT-1)) begin
-            r_psram_req <= 1'b1;
-        end
-    end
-    assign o_psram_read_req = r_psram_req;
-
-    // fifo
-    wire [63:0] w_rd_data;
-    assign w_rd_data = i_psram_data;
-    linebuffer_fifo_hs u_fifo(
-		.Data(w_rd_data), //input [63:0] Data
-		.WrReset(~i_rst_n), //input WrReset
-		.RdReset(~i_rst_n), //input RdReset
-		.WrClk(i_psram_clk), //input WrClk
-		.RdClk(i_clk), //input RdClk
-		.WrEn(i_psram_data_valid), //input WrEn
-		.RdEn(i_active), //input RdEn
-		.Q(o_rgb_data), //output [15:0] Q
-		.Empty(), //output Empty
-		.Full() //output Full
-	);
-
-    // fifo 読み出し遅延分 syncを遅らせる
-    reg [4:0] r_dly;
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
-            r_dly <= 5'd0;
+            r_psram_req <= 1'b0;
         end
         else begin
-            r_dly <= {i_active, i_hsync, i_vsync, i_hblank, i_vblank};
+            if (w_hsync_pls & w_read_line) begin
+                r_psram_req <= 1'b1;
+            end
+            else if (r_state == ST_READ_LINE & r_psram_req == 1'b0) begin
+                r_psram_req <= 1'b1;
+            end
+            else if (i_psram_cmd_gnt) begin
+                r_psram_req <= 1'b0;
+            end
         end
     end
-    assign {o_active, o_hsync, o_vsync, o_hblank, o_vblank} = r_dly;
+    assign o_psram_cmd_req = r_psram_req;
+
+    // ラインバッファ書き込みアドレス
+    reg [8:0] r_dpram_write_addr;
+    always @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n)
+            r_dpram_write_addr <= 9'd0;
+        else if (w_hsync_pls)
+            r_dpram_write_addr <= 9'd0;
+        else if (i_psram_rd_data_valid)
+            r_dpram_write_addr <= r_dpram_write_addr + 9'd1;
+    end
+
+    // ラインバッファ
+    reg  [10:0] r_dpram_read_addr;
+    wire [15:0] w_dpram_read_data;
+    framebuffer_reader_dpb u_dpram(
+        .clka(i_clk),
+        .reseta(~i_rst_n),
+        .ada(r_dpram_write_addr),
+        .dina(i_psram_rd_data),
+        .douta(),
+        .wrea(i_psram_rd_data_valid),
+        .cea(1'b1),
+        .ocea(1'b1),
+
+        .clkb(i_pixel_clk),
+        .resetb(~i_pixel_rst_n),
+        .adb(r_dpram_read_addr),
+        .dinb(16'd0),
+        .doutb(w_dpram_read_data),
+        .wreb(1'b0),
+        .ceb(1'b1),
+        .oceb(1'b1)
+    );
+
+    // ラインバッファ読み出しアドレス
+    always @(posedge i_pixel_clk or negedge i_rst_n) begin
+        if (!i_rst_n)
+            r_dpram_read_addr <= 11'd0;
+        else if (i_hsync)
+            r_dpram_read_addr <= 11'd0;
+        else if (i_active)
+            r_dpram_read_addr <= r_dpram_read_addr + 11'd1;
+    end
+
+    // ラインバッファ読み出しSyncディレイ (1clk delay)
+    reg [2:0] r_delay;
+    always @(posedge i_pixel_clk) begin
+        r_delay <= {i_hsync, i_vsync, i_active};
+    end
+
+    assign {o_hsync, o_vsync, o_active} = r_delay;
+    assign o_rgb_data = w_dpram_read_data;
 
 endmodule

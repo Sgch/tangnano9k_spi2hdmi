@@ -2,7 +2,7 @@
 hdl/ip/
 !hdl/ip/dvi_rpll/dvi_rpll.ipc
 !hdl/ip/dvi_tx/dvi_tx.ipc
-!hdl/ip/linebuffer_fifo_hs/linebuffer_fifo_hs.ipc
+!hdl/ip/framebuffer_reader_dpb/framebuffer_reader_dpb.ipc
 !hdl/ip/psram_memory_interface_hs/psram_memory_interface_hs.ipc
 !hdl/ip/psram_rpll/psram_rpll.ipc
 !hdl/ip/sram_write_fifo_hs/sram_write_fifo_hs.ipc

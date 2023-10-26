@@ -221,26 +221,27 @@ module top(
         .i_clk(w_psram_clk),
         .i_rst_n(w_rst_n),
 
+        .i_pixel_clk(w_psram_clk),
+        .i_pixel_rst_n(w_rst_n),
         .i_active(w_out_de),
         .i_hsync(w_hsync),
         .i_vsync(w_vsync),
-        .i_hblank(w_hblank),
-        .i_vblank(w_vblank),
 
         .o_rgb_data(w_fb_reader_rgb565),
         .o_active(w_fb_reader_vde),
         .o_hsync(w_fb_reader_hsync),
         .o_vsync(w_fb_reader_vsync),
-        .o_hblank(),
-        .o_vblank(),
+
+        .i_reg_width(11'd1280),
+        .i_reg_start_line(11'd20),
+        .i_reg_end_line(11'd20 + 11'd720),
 
     // Memory if
-        .i_psram_clk(w_psram_clk), // i_clk <= i_psram_clk
-        .o_psram_read_req(w_fb_read_req),
-        .i_psram_read_gnt(w_fb_read_gnt),
+        .o_psram_cmd_req(w_fb_read_req),
+        .i_psram_cmd_gnt(w_fb_read_gnt),
         .o_psram_addr(w_fb_read_addr),
-        .i_psram_data(w_fb_read_data),
-        .i_psram_data_valid(w_fb_read_data_valid)
+        .i_psram_rd_data(w_fb_read_data),
+        .i_psram_rd_data_valid(w_fb_read_data_valid)
     );
 
     wire [23:0] w_rgb_data;
