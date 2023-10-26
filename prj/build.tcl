@@ -7,7 +7,8 @@ set_device -name GW1NR-9C GW1NR-LV9QN88PC6/I5
 
 set_option -print_all_synthesis_warning 1
 
-set_option -use_jtag_as_gpio 1
+set_option -top_module top
+
 set_option -use_sspi_as_gpio 1
 set_option -use_mspi_as_gpio 1
 
