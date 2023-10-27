@@ -197,11 +197,10 @@ module packer (
                 r_psram_write_done <= 1'b0;
             end
             PSRAM_STATE_WAIT_GNT: begin
-                r_psram_write_req <= 1'b0;
-
                 if (i_psram_write_gnt) begin
                     r_psram_write_state <= PSRAM_STATE_WRITING;
 
+                    r_psram_write_req <= 1'b0;
                     r_ram_read <= 1'b1;
                     r_ram_read_addr <= r_ram_read_addr + 3'd1;
                 end
