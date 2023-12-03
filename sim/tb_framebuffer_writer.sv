@@ -10,7 +10,7 @@ module tb_framebuffer_writer;
     wire w_spi_sck;
     wire w_spi_cs;
     wire w_spi_mosi;
-    tb_spi_host #(
+    sim_spi_host #(
         .SCK_MHZ(25)
     ) u_spi_host(
         .o_sck(w_spi_sck),

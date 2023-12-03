@@ -1,5 +1,5 @@
 `timescale 1ps/1ps
-module tb_spi_host #(
+module sim_spi_host #(
     SCK_MHZ = 8,
     WORD = 8,
     DEVICES = 1
