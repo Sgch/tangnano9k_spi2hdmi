@@ -11,7 +11,6 @@ module inst_dec_reg (
     input   wire            i_spi_csreleased,
     input   wire            i_spi_rxdone,
 
-    // 
     output  wire    [15:0]  o_pixel_data,   // 画素データ
     output  reg     [31:0]  o_col_addr,     // XS15:0[31:16], XE15:0[15:0]
     output  reg     [31:0]  o_row_addr,     // YS15:0[31:16], YE15:0[15:0]
@@ -20,7 +19,7 @@ module inst_dec_reg (
     output  wire            o_sram_write_req,       // SRAM画素データ書き込みリクエスト
     output  wire            o_sram_waddr_set_req,   // SRAM書き込みアドレス設定リクエスト
     output  reg             o_dispOn
-    );
+);
 
     /**************************************************************
      *  Common Instructions
@@ -56,7 +55,6 @@ module inst_dec_reg (
     localparam CMD_FRMCTR2      = 8'hB2;
     localparam CMD_FRMCTR3      = 8'hB3;
     localparam CMD_INVCTR       = 8'hB4;
-
     localparam CMD_PWCTR1       = 8'hC0;
     localparam CMD_PWCTR2       = 8'hC1;
     localparam CMD_PWCTR3       = 8'hC2;
@@ -64,14 +62,11 @@ module inst_dec_reg (
     localparam CMD_PWCTR5       = 8'hC4;
     localparam CMD_VMCTR1       = 8'hC5;
     localparam CMD_VMOFCTR      = 8'hC7;
-
     localparam CMD_WRID2        = 8'hD1;
     localparam CMD_WRID3        = 8'hD2;
-
     localparam CMD_NVCTR1       = 8'hD9;
     localparam CMD_NVCTR2       = 8'hDE;
     localparam CMD_NVCTR3       = 8'hDF;
-
     localparam CMD_GAMCTRP1     = 8'hE0;
     localparam CMD_GAMCTRN1     = 8'hE1;
 
@@ -110,20 +105,17 @@ module inst_dec_reg (
     /**************************************************************
      *  SPI受信データ処理 / データ書き込み要求処理
      *************************************************************/
-    reg         r_dc;
-    reg [3:0]   r_inst_args_cnt;
-    reg         r_inst_args_varlen;
-    reg [ 7:0]  r_inst_data;                // Instruction Data
-    wire        w_inst_done;
-
-    //reg         r_inst_en;
-    wire   w_on_inst;
-    assign w_on_inst = i_spi_rxdone & ~r_dc;
-    wire   w_on_args;
-    assign w_on_args = i_spi_rxdone & r_dc;
-    wire   w_on_end_args;
-    assign w_on_end_args = (r_inst_args_cnt == 5'd0);
-
+    reg        r_dc;
+    reg  [3:0] r_inst_args_cnt;
+    reg        r_inst_args_varlen;
+    reg  [7:0] r_inst_data;
+    wire       w_inst_done;
+    wire       w_on_inst;
+    wire       w_on_args;
+    wire       w_on_end_args;
+    assign     w_on_inst = i_spi_rxdone & ~r_dc;
+    assign     w_on_args = i_spi_rxdone & r_dc;
+    assign     w_on_end_args = (r_inst_args_cnt == 5'd0);
     always @(posedge i_clk or negedge i_rst_n) begin
         if (~i_rst_n) begin
             r_dc <= 1'b0;
