@@ -187,15 +187,17 @@ module PSRAM_Memory_Interface_HS_core(
     assign w_ram_addr = { addr[20:4], r_addr_low4 };
 
     // write
+    // data: 64'hHHGG_FFEE_DDCC_BBAA
+    // mask:  8'bHFDB_GECA
     reg [3:0]  r_data_mask_lower_dly;
     reg [31:0] r_wr_data_lower_dly;
     always @(posedge clk) begin
-        r_data_mask_lower_dly <= data_mask[3:0];
+        r_data_mask_lower_dly <= { data_mask[5], data_mask[1], data_mask[4], data_mask[0] };
         r_wr_data_lower_dly  <= wr_data[31:0];
     end
     wire [3:0]  w_ram_data_mask;
     wire [31:0] w_ram_wr_data;
-    assign w_ram_data_mask = r_tcmd_cnt[0] ? data_mask[7:4] : r_data_mask_lower_dly;
+    assign w_ram_data_mask = r_tcmd_cnt[0] ? { data_mask[7], data_mask[3], data_mask[6], data_mask[2] } : r_data_mask_lower_dly;
     assign w_ram_wr_data   = r_tcmd_cnt[0] ? wr_data[63:32] : r_wr_data_lower_dly;
 
     wire [31:0] w_ram_rd_data;

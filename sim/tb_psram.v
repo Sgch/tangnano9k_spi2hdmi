@@ -1,17 +1,18 @@
 `timescale 1ns/1ps
-module tb_top_psram;
+module tb_psram;
     reg rst_n;
     wire w_clk_i;
-    tb_clkgen #(.FREQ_MHZ(27)) u_clk_27m(.clk(w_clk_i));
+    sim_clkgen #(.FREQ_MHZ(27)) u_clk_27m(.clk(w_clk_i));
 
-    wire    pll_lock_i;
+    wire    pll_lock_i = 1'b1;
     wire    memory_clk_i;
-    pll_psram u_pll_psram (
-        .reset ( ~rst_n ),       // input reset
-        .clkin ( w_clk_i ),             // 27MHz
-        .clkout ( memory_clk_i ),         // 148.5MHz
-        .lock  ( pll_lock_i )   // output lock
-    );
+    sim_clkgen #(.FREQ_MHZ(148.5)) u_clk_148_5m(.clk(memory_clk_i));
+    // pll_psram u_pll_psram (
+    //     .reset ( ~rst_n ),       // input reset
+    //     .clkin ( w_clk_i ),             // 27MHz
+    //     .clkout ( memory_clk_i ),         // 148.5MHz
+    //     .lock  ( pll_lock_i )   // output lock
+    // );
 
     reg  [20:0] addr_i;
     reg         addr_en_i;
@@ -58,9 +59,8 @@ module tb_top_psram;
         cmd_i    = 1'b1;
         cmd_en_i = 1'b1;
         addr_i   = 21'd0;
-        wr_data_i = 64'h0706_0504_0302_0100;
-        // data_mask_i = 8'h10;
-        data_mask_i = 8'h00;
+        wr_data_i = 64'hfedc_ba98_7654_3210;
+        data_mask_i = ~8'b001_0001;
 
         @(posedge clk_out);
         cmd_i    = 1'b0;
