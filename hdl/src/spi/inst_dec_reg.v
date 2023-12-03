@@ -112,110 +112,121 @@ module inst_dec_reg (
      *  SPI受信データ処理 / データ書き込み要求処理
      *************************************************************/
     reg         r_dc;
-    reg [15:0]  r_mosi_16_pixel_data;
-    reg         r_pixel_data_fin;
     reg [4:0]   r_inst_byte_cnt;
     reg [4:0]   r_inst_args_cnt;
     reg [ 7:0]  r_inst_data;                // Instruction Data
-    reg         r_sram_clr_req;
-    reg         r_sram_write_req;
-    reg         r_sram_waddr_set_req;
 
     //reg         r_inst_en;
+    wire   w_on_inst;
+    assign w_on_inst = i_spi_rxdone & ~r_dc;
+    wire   w_on_args;
+    assign w_on_args = i_spi_rxdone & r_dc;
+
     always @(posedge i_clk or negedge i_rst_n) begin
         if (~i_rst_n) begin
             r_dc <= 1'b0;
             r_inst_data[7:0] <= 8'd0;
-            r_pixel_data_fin <= 1'b0;
-            o_col_addr[31:0] <= 32'd0;
             r_inst_byte_cnt[4:0] <= 5'd0;
             r_inst_args_cnt <= 5'd0;
-            o_row_addr[31:0] <= 32'd0;
-            r_sram_clr_req <= 1'b0;
-            r_sram_write_req <= 1'b0;
-            r_sram_waddr_set_req <= 1'b0;
-            r_mosi_16_pixel_data <= 16'd0;
-            o_dispOn <= 1'b0;
         end else if (i_spi_csreleased) begin
             r_dc <= 1'b0;
             r_inst_data[7:0] <= 8'd0;
-            r_pixel_data_fin <= 1'b0;
             r_inst_byte_cnt[4:0] <= 5'd0;
             r_inst_args_cnt <= 5'd0;
         end else begin
-            if (i_spi_rxdone & ~r_dc) begin
-                // dc:low = Command
+            if (w_on_inst) begin
                 r_inst_data[7:0] <= i_spi_data[7:0];
-                r_pixel_data_fin <= 1'b0;
                 r_inst_byte_cnt[4:0] <= 5'd0;
                 r_dc <= (InstArgsLengthROM(i_spi_data) > 0); // パラメータ(データ)ありコマンド
                 r_inst_args_cnt <= InstArgsLengthROM(i_spi_data) - 5'd1;
-
-                // 1Byteで完結するコマンドは即時実行可能
-                // Instruction分岐
-                case (i_spi_data[7:0])
-                    CMD_NOP : ;
-
-                    CMD_SWRESET : begin
-                            // Software reset
-                            r_sram_clr_req <= 1'b1;      // SRAMクリア
-                            o_dispOn <= 1'b0;                 // Display OFF
-                        end
-                    CMD_DISPOFF : begin
-                            o_dispOn <= 1'b0;
-                        end
-                    CMD_DISPON  : begin
-                            o_dispOn <= 1'b1;
-                        end
-                    default :;
-                endcase
-
-            end else if (i_spi_rxdone & r_dc) begin
-
-                // Instruction分岐
-                case (r_inst_data[7:0])
-                    CMD_RAMWR : begin
-                            // ピクセルデータ取得
-                            r_mosi_16_pixel_data[15:0] <= {r_mosi_16_pixel_data[7:0], i_spi_data[7:0]};
-                            r_pixel_data_fin <= ~r_pixel_data_fin;
-                            if (r_pixel_data_fin) begin
-                                r_sram_write_req <= 1'b1;
-                            end
-                        end
-                    CMD_CASET : begin
-                            // Column Address Set
-                            o_col_addr[31:0] <= {o_col_addr[23:0], i_spi_data[7:0]};
-                            if (r_inst_byte_cnt[1:0] == 2'd3) begin
-                                r_sram_waddr_set_req <= 1'b1;
-                            end
-                        end
-                    CMD_RASET : begin
-                            // Row Address Set
-                            o_row_addr[31:0] <= {o_row_addr[23:0], i_spi_data[7:0]};
-                            if (r_inst_byte_cnt[1:0] == 2'd3) begin
-                                r_sram_waddr_set_req <= 1'b1;
-                            end
-                        end
-                    default : ;
-                endcase
-
+            end else if (w_on_args) begin
                 r_inst_byte_cnt <= r_inst_byte_cnt + 5'd1;
                 if (r_inst_byte_cnt == r_inst_args_cnt && (r_inst_data != CMD_RAMWR)) begin
                     r_dc <= 1'b0;
                 end
-            
-            end else begin
-                r_sram_clr_req <= 1'b0;
-                r_sram_write_req <= 1'b0;
-                r_sram_waddr_set_req <= 1'b0;
             end
         end
     end
 
-    assign o_pixel_data[15:0]   = r_mosi_16_pixel_data[15:0];
+    // sram clear
+    reg r_sram_clr_req;
+    always @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n) begin
+            r_sram_clr_req <= 1'b0;
+        end else if (w_on_inst && (i_spi_data == CMD_SWRESET)) begin
+            r_sram_clr_req <= 1'b1;
+        end else begin
+            r_sram_clr_req <= 1'b0;
+        end
+    end
+    assign o_sram_clr_req = r_sram_clr_req;
 
-    assign o_sram_clr_req       = r_sram_clr_req;
-    assign o_sram_write_req     = r_sram_write_req;
-    assign o_sram_waddr_set_req = r_sram_waddr_set_req;
+    // disp on
+    always @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n) begin
+            o_dispOn <= 1'b0;
+        end else if (w_on_inst) begin
+            case (i_spi_data)
+                CMD_SWRESET: o_dispOn <= 1'b0;
+                CMD_DISPOFF: o_dispOn <= 1'b0;
+                CMD_DISPON:  o_dispOn <= 1'b1;
+                default: ; // hold
+            endcase
+        end
+    end
+
+    // column address
+    reg r_sram_col_addr_set_req;
+    always @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n) begin
+            r_sram_col_addr_set_req <= 1'b0;
+            o_col_addr <= 32'd0;
+        end else if (w_on_args && (r_inst_data == CMD_CASET)) begin
+            o_col_addr <= { o_col_addr[23:0], i_spi_data };
+            if (r_inst_byte_cnt[1:0] == 2'd3) begin
+                r_sram_col_addr_set_req <= 1'b1;
+            end
+        end else begin
+            r_sram_col_addr_set_req <= 1'b0;
+        end
+    end
+    // row address
+    reg r_sram_row_addr_set_req;
+    always @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n) begin
+            r_sram_row_addr_set_req <= 1'b0;
+            o_row_addr <= 32'd0;
+        end else if (w_on_args && (r_inst_data == CMD_RASET)) begin
+            o_row_addr <= { o_row_addr[23:0], i_spi_data };
+            if (r_inst_byte_cnt[1:0] == 2'd3) begin
+                r_sram_row_addr_set_req <= 1'b1;
+            end
+        end else begin
+            r_sram_row_addr_set_req <= 1'b0;
+        end
+    end
+    assign o_sram_waddr_set_req = r_sram_col_addr_set_req | r_sram_row_addr_set_req;
+
+    // ram write
+    reg [15:0] r_mosi_16_pixel_data;
+    reg        r_pixel_data_fin;
+    reg        r_sram_write_req;
+    always @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n) begin
+            r_pixel_data_fin <= 1'b0;
+            r_mosi_16_pixel_data <= 16'd0;
+            r_sram_write_req <= 1'b0;
+        end else if (w_on_args && (r_inst_data == CMD_RAMWR)) begin
+            r_mosi_16_pixel_data <= { r_mosi_16_pixel_data[7:0], i_spi_data };
+            r_pixel_data_fin <= ~r_pixel_data_fin;
+            if (r_pixel_data_fin) begin
+                r_sram_write_req <= 1'b1;
+            end
+        end else begin
+            r_sram_write_req <= 1'b0;
+        end
+    end
+    assign o_sram_write_req  = r_sram_write_req;
+    assign o_pixel_data      = r_mosi_16_pixel_data;
 
 endmodule
