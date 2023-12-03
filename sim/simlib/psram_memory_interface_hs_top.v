@@ -75,17 +75,28 @@ module PSRAM_Memory_Interface_HS_Top(
     assign init_calib = r_init_calib;
 
     // memory
+    wire w_rd_data_valid;
+    wire [63:0] w_rd_data;
     PSRAM_Memory_Interface_HS_core mem_core(
         .clk(memory_clk),
         .rst_n(w_rst_n & r_init_calib),
         .addr(addr),
         .wr_data(wr_data),
         .data_mask(data_mask),
-        .rd_data(rd_data),
-        .rd_data_valid(rd_data_valid),
+        .rd_data(w_rd_data),
+        .rd_data_valid(w_rd_data_valid),
         .cmd_en(cmd_en),
         .cmd(cmd)
     );
+
+    reg r_rd_data_valid_sync;
+    reg [63:0] r_rd_data_sync;
+    always @(posedge clk_out) begin
+        r_rd_data_valid_sync <= w_rd_data_valid;
+        r_rd_data_sync <= w_rd_data;
+    end
+    assign rd_data_valid = r_rd_data_valid_sync;
+    assign rd_data = r_rd_data_sync;
 
 endmodule
 
@@ -229,11 +240,8 @@ module PSRAM_Memory_Interface_HS_core(
     end
     assign w_fifo_read = (r_fifo_read_count > 0) && !r_fifo_read_count[0];
 
-    wire w_fido_read_valid;
-    assign w_fido_read_valid = (r_fifo_read_count > 0);
-
-    assign rd_data_valid = w_fido_read_valid;
-    assign rd_data = (w_fido_read_valid) ? w_fifo_rd_data : 64'h0000_0000_0000_0000;
+    assign rd_data_valid = (r_fifo_read_count != 5'd0);
+    assign rd_data = w_fifo_rd_data;
 
 endmodule
 
