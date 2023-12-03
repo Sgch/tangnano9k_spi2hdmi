@@ -117,9 +117,9 @@ module inst_dec_reg (
     reg [4:0]   r_inst_byte_cnt;
     reg [4:0]   r_inst_args_cnt;
     reg [ 7:0]  r_inst_data;                // Instruction Data
-    reg [3:0]   r_sram_clr_req;
-    reg [3:0]   r_sram_write_req;
-    reg [3:0]   r_sram_waddr_set_req;
+    reg         r_sram_clr_req;
+    reg         r_sram_write_req;
+    reg         r_sram_waddr_set_req;
 
     //reg         r_inst_en;
     always @(posedge i_clk or negedge i_rst_n) begin
@@ -131,9 +131,9 @@ module inst_dec_reg (
             r_inst_byte_cnt[4:0] <= 5'd0;
             r_inst_args_cnt <= 5'd0;
             o_row_addr[31:0] <= 32'd0;
-            r_sram_clr_req[3:0] <= 4'd0;
-            r_sram_write_req[3:0] <= 4'd0;
-            r_sram_waddr_set_req[3:0] <= 4'd0;
+            r_sram_clr_req <= 1'b0;
+            r_sram_write_req <= 1'b0;
+            r_sram_waddr_set_req <= 1'b0;
             r_mosi_16_pixel_data <= 16'd0;
             o_dispOn <= 1'b0;
         end else if (i_spi_csreleased) begin
@@ -158,7 +158,7 @@ module inst_dec_reg (
 
                     CMD_SWRESET : begin
                             // Software reset
-                            r_sram_clr_req[3:0] <= 4'd1;      // SRAMクリア
+                            r_sram_clr_req <= 1'b1;      // SRAMクリア
                             o_dispOn <= 1'b0;                 // Display OFF
                         end
                     CMD_DISPOFF : begin
@@ -179,21 +179,21 @@ module inst_dec_reg (
                             r_mosi_16_pixel_data[15:0] <= {r_mosi_16_pixel_data[7:0], i_spi_data[7:0]};
                             r_pixel_data_fin <= ~r_pixel_data_fin;
                             if (r_pixel_data_fin) begin
-                                r_sram_write_req[3:0] <= 4'd1;
+                                r_sram_write_req <= 1'b1;
                             end
                         end
                     CMD_CASET : begin
                             // Column Address Set
                             o_col_addr[31:0] <= {o_col_addr[23:0], i_spi_data[7:0]};
                             if (r_inst_byte_cnt[1:0] == 2'd3) begin
-                                r_sram_waddr_set_req[3:0] <= 4'd1;
+                                r_sram_waddr_set_req <= 1'b1;
                             end
                         end
                     CMD_RASET : begin
                             // Row Address Set
                             o_row_addr[31:0] <= {o_row_addr[23:0], i_spi_data[7:0]};
                             if (r_inst_byte_cnt[1:0] == 2'd3) begin
-                                r_sram_waddr_set_req[3:0] <= 4'd1;
+                                r_sram_waddr_set_req <= 1'b1;
                             end
                         end
                     default : ;
@@ -205,17 +205,17 @@ module inst_dec_reg (
                 end
             
             end else begin
-                r_sram_clr_req[3:0] <= {r_sram_clr_req[2:0], 1'b0};
-                r_sram_write_req[3:0] <= {r_sram_write_req[2:0], 1'b0};
-                r_sram_waddr_set_req[3:0] <= {r_sram_waddr_set_req[2:0], 1'b0};
+                r_sram_clr_req <= 1'b0;
+                r_sram_write_req <= 1'b0;
+                r_sram_waddr_set_req <= 1'b0;
             end
         end
     end
 
     assign o_pixel_data[15:0]   = r_mosi_16_pixel_data[15:0];
-    // 4 x i_clk伸長
-    assign o_sram_clr_req       = |r_sram_clr_req[3:0];
-    assign o_sram_write_req     = |r_sram_write_req[3:0];
-    assign o_sram_waddr_set_req = |r_sram_waddr_set_req[3:0];
+
+    assign o_sram_clr_req       = r_sram_clr_req;
+    assign o_sram_write_req     = r_sram_write_req;
+    assign o_sram_waddr_set_req = r_sram_waddr_set_req;
 
 endmodule
