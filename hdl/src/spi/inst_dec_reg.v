@@ -75,7 +75,7 @@ module inst_dec_reg (
     localparam CMD_GAMCTRP1     = 8'hE0;
     localparam CMD_GAMCTRN1     = 8'hE1;
 
-    // instraction args length ROM
+    // instruction args length ROM
     function [4:0] InstArgsLengthROM(input [7:0] inst_code);
     begin
         case(inst_code)
@@ -135,6 +135,7 @@ module inst_dec_reg (
             r_sram_write_req[3:0] <= 4'd0;
             r_sram_waddr_set_req[3:0] <= 4'd0;
             r_mosi_16_pixel_data <= 16'd0;
+            o_dispOn <= 1'b0;
         end else if (i_spi_csreleased) begin
             r_dc <= 1'b0;
             r_inst_data[7:0] <= 8'd0;
