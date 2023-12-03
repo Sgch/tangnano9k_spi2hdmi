@@ -17,3 +17,6 @@ sim/work/
 sim/Makefile
 sim/vsim.wlf
 sim/transcript
+
+# VScode
+.vscode/
