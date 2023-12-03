@@ -75,35 +75,34 @@ module inst_dec_reg (
     localparam CMD_GAMCTRP1     = 8'hE0;
     localparam CMD_GAMCTRN1     = 8'hE1;
 
-    // instruction args length ROM
-    function [4:0] InstArgsLengthROM(input [7:0] inst_code);
+    function [5:0] InstructionROM(input [7:0] inst_code);
     begin
         case(inst_code)
-        CMD_GAMMASET: InstArgsLengthROM = 5'd1;
-        CMD_CASET:    InstArgsLengthROM = 5'd4;
-        CMD_RASET:    InstArgsLengthROM = 5'd4;
-        CMD_RAMWR:    InstArgsLengthROM = 5'd16; // 可変長
-        CMD_MADCTL:   InstArgsLengthROM = 5'd1;
-        CMD_COLMOD:   InstArgsLengthROM = 5'd1;
-        CMD_FRMCTR1:  InstArgsLengthROM = 5'd3;
-        CMD_FRMCTR2:  InstArgsLengthROM = 5'd3;
-        CMD_FRMCTR3:  InstArgsLengthROM = 5'd6;
-        CMD_INVCTR:   InstArgsLengthROM = 5'd1;
-        CMD_PWCTR1:   InstArgsLengthROM = 5'd3;
-        CMD_PWCTR2:   InstArgsLengthROM = 5'd1;
-        CMD_PWCTR3:   InstArgsLengthROM = 5'd2;
-        CMD_PWCTR4:   InstArgsLengthROM = 5'd2;
-        CMD_PWCTR5:   InstArgsLengthROM = 5'd2;
-        CMD_VMCTR1:   InstArgsLengthROM = 5'd1;
-        CMD_VMOFCTR:  InstArgsLengthROM = 5'd1;
-        CMD_WRID2:    InstArgsLengthROM = 5'd1;
-        CMD_WRID3:    InstArgsLengthROM = 5'd1;
-        CMD_NVCTR1:   InstArgsLengthROM = 5'd1;
-        CMD_NVCTR3:   InstArgsLengthROM = 5'd2;
-        CMD_GAMCTRP1: InstArgsLengthROM = 5'd16;
-        CMD_GAMCTRN1: InstArgsLengthROM = 5'd16;
-
-        default: InstArgsLengthROM = 5'd0;
+        //                             { exist_arg, variable_arg_len, arg_len-1 }
+        CMD_GAMMASET: InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_CASET:    InstructionROM = { 1'b1, 1'b0, 4'd3  };
+        CMD_RASET:    InstructionROM = { 1'b1, 1'b0, 4'd3  };
+        CMD_RAMWR:    InstructionROM = { 1'b1, 1'b1, 4'd0  };
+        CMD_MADCTL:   InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_COLMOD:   InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_FRMCTR1:  InstructionROM = { 1'b1, 1'b0, 4'd2  };
+        CMD_FRMCTR2:  InstructionROM = { 1'b1, 1'b0, 4'd2  };
+        CMD_FRMCTR3:  InstructionROM = { 1'b1, 1'b0, 4'd5  };
+        CMD_INVCTR:   InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_PWCTR1:   InstructionROM = { 1'b1, 1'b0, 4'd2  };
+        CMD_PWCTR2:   InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_PWCTR3:   InstructionROM = { 1'b1, 1'b0, 4'd1  };
+        CMD_PWCTR4:   InstructionROM = { 1'b1, 1'b0, 4'd1  };
+        CMD_PWCTR5:   InstructionROM = { 1'b1, 1'b0, 4'd1  };
+        CMD_VMCTR1:   InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_VMOFCTR:  InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_WRID2:    InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_WRID3:    InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_NVCTR1:   InstructionROM = { 1'b1, 1'b0, 4'd0  };
+        CMD_NVCTR3:   InstructionROM = { 1'b1, 1'b0, 4'd1  };
+        CMD_GAMCTRP1: InstructionROM = { 1'b1, 1'b0, 4'd15 };
+        CMD_GAMCTRN1: InstructionROM = { 1'b1, 1'b0, 4'd15 };
+        default:      InstructionROM = { 1'b0, 1'b0, 4'd0  };
         endcase
     end
     endfunction
@@ -112,8 +111,8 @@ module inst_dec_reg (
      *  SPI受信データ処理 / データ書き込み要求処理
      *************************************************************/
     reg         r_dc;
-    reg [4:0]   r_inst_byte_cnt;
-    reg [4:0]   r_inst_args_cnt;
+    reg [3:0]   r_inst_args_cnt;
+    reg         r_inst_args_varlen;
     reg [ 7:0]  r_inst_data;                // Instruction Data
 
     //reg         r_inst_en;
@@ -121,27 +120,27 @@ module inst_dec_reg (
     assign w_on_inst = i_spi_rxdone & ~r_dc;
     wire   w_on_args;
     assign w_on_args = i_spi_rxdone & r_dc;
+    wire   w_on_end_args;
+    assign w_on_end_args = (r_inst_args_cnt == 5'd0);
 
     always @(posedge i_clk or negedge i_rst_n) begin
         if (~i_rst_n) begin
             r_dc <= 1'b0;
             r_inst_data[7:0] <= 8'd0;
-            r_inst_byte_cnt[4:0] <= 5'd0;
-            r_inst_args_cnt <= 5'd0;
+            r_inst_args_cnt <= 4'd0;
+            r_inst_args_varlen <= 1'b0;
         end else if (i_spi_csreleased) begin
             r_dc <= 1'b0;
             r_inst_data[7:0] <= 8'd0;
-            r_inst_byte_cnt[4:0] <= 5'd0;
-            r_inst_args_cnt <= 5'd0;
+            r_inst_args_cnt <= 4'd0;
+            r_inst_args_varlen <= 1'b0;
         end else begin
             if (w_on_inst) begin
                 r_inst_data[7:0] <= i_spi_data[7:0];
-                r_inst_byte_cnt[4:0] <= 5'd0;
-                r_dc <= (InstArgsLengthROM(i_spi_data) > 0); // パラメータ(データ)ありコマンド
-                r_inst_args_cnt <= InstArgsLengthROM(i_spi_data) - 5'd1;
+                { r_dc, r_inst_args_varlen, r_inst_args_cnt } <= InstructionROM(i_spi_data);
             end else if (w_on_args) begin
-                r_inst_byte_cnt <= r_inst_byte_cnt + 5'd1;
-                if (r_inst_byte_cnt == r_inst_args_cnt && (r_inst_data != CMD_RAMWR)) begin
+                r_inst_args_cnt <= r_inst_args_cnt - 5'd1;
+                if (w_on_end_args && (r_inst_data != CMD_RAMWR)) begin
                     r_dc <= 1'b0;
                 end
             end
@@ -183,7 +182,7 @@ module inst_dec_reg (
             o_col_addr <= 32'd0;
         end else if (w_on_args && (r_inst_data == CMD_CASET)) begin
             o_col_addr <= { o_col_addr[23:0], i_spi_data };
-            if (r_inst_byte_cnt[1:0] == 2'd3) begin
+            if (w_on_end_args) begin
                 r_sram_col_addr_set_req <= 1'b1;
             end
         end else begin
@@ -198,7 +197,7 @@ module inst_dec_reg (
             o_row_addr <= 32'd0;
         end else if (w_on_args && (r_inst_data == CMD_RASET)) begin
             o_row_addr <= { o_row_addr[23:0], i_spi_data };
-            if (r_inst_byte_cnt[1:0] == 2'd3) begin
+            if (w_on_end_args) begin
                 r_sram_row_addr_set_req <= 1'b1;
             end
         end else begin
