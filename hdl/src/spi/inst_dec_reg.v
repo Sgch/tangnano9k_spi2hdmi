@@ -114,6 +114,7 @@ module inst_dec_reg (
     reg [3:0]   r_inst_args_cnt;
     reg         r_inst_args_varlen;
     reg [ 7:0]  r_inst_data;                // Instruction Data
+    wire        w_inst_done;
 
     //reg         r_inst_en;
     wire   w_on_inst;
@@ -140,9 +141,11 @@ module inst_dec_reg (
                 { r_dc, r_inst_args_varlen, r_inst_args_cnt } <= InstructionROM(i_spi_data);
             end else if (w_on_args) begin
                 r_inst_args_cnt <= r_inst_args_cnt - 5'd1;
-                if (w_on_end_args && (r_inst_data != CMD_RAMWR)) begin
+                if (w_on_end_args && !r_inst_args_varlen) begin
                     r_dc <= 1'b0;
                 end
+            end else if (w_inst_done && r_inst_args_varlen) begin
+                r_dc <= 1'b0;
             end
         end
     end
@@ -227,5 +230,31 @@ module inst_dec_reg (
     end
     assign o_sram_write_req  = r_sram_write_req;
     assign o_pixel_data      = r_mosi_16_pixel_data;
+
+    // ram write counter
+    wire [31:0] w_sram_write_len;
+    assign      w_sram_write_len = (o_col_addr[15:0] - o_col_addr[31:16] + 16'd1) * (o_row_addr[15:0] - o_row_addr[31:16] + 16'd1) - 32'd1;
+    reg  [31:0] r_sram_write_left;
+    reg         r_sram_write_done;
+    always @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n) begin
+            r_sram_write_left <= 32'd0;
+            r_sram_write_done <= 1'b0;
+        end else if (w_on_inst && (i_spi_data == CMD_RAMWR)) begin
+            r_sram_write_left <= w_sram_write_len;
+            r_sram_write_done <= 1'b0;
+        end else if (w_on_args && (r_inst_data == CMD_RAMWR)) begin
+            if (r_pixel_data_fin) begin
+                r_sram_write_left <= r_sram_write_left - 32'd1;
+                if (r_sram_write_left == 32'd0) begin
+                    r_sram_write_done <= 1'b1;
+                end
+            end
+        end
+        else begin
+            r_sram_write_done <= 1'b0;
+        end
+    end
+    assign w_inst_done = r_sram_write_done;
 
 endmodule
