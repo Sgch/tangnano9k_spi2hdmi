@@ -205,8 +205,6 @@ module PSRAM_Memory_Interface_HS_core(
         .clk(clk),
         .rst_n(rst_n),
 
-        .flush(w_rising_cmd_en),
-
         .write(r_read && w_ram_addr_gen),
         .wr_data(w_ram_rd_data),
 
@@ -284,8 +282,6 @@ module PSRAM_Memory_Interface_HS_fifo #(
     input   wire            clk,
     input   wire            rst_n,
 
-    input   wire            flush,
-
     input   wire            write,
     input   wire    [31:0]  wr_data,
     input   wire            read,
@@ -299,9 +295,6 @@ module PSRAM_Memory_Interface_HS_fifo #(
     reg [RD_WIDTH:0] r_wd_addr;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            r_wd_addr <= {(RD_WIDTH+1){1'b0}};
-        end
-        else if (flush) begin
             r_wd_addr <= {(RD_WIDTH+1){1'b0}};
         end
         else if (write) begin
@@ -318,9 +311,6 @@ module PSRAM_Memory_Interface_HS_fifo #(
     reg [RD_WIDTH-1:0] r_rd_addr;
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            r_rd_addr <= {RD_WIDTH{1'b0}};
-        end
-        else if (flush) begin
             r_rd_addr <= {RD_WIDTH{1'b0}};
         end
         else if (read) begin
