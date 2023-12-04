@@ -15,8 +15,6 @@ module tb_framebuffer_reader;
     wire    w_out_de;
     wire    w_hsync;
     wire    w_vsync;
-    wire    w_hblank;
-    wire    w_vblank;
     syn_gen u_syn_gen (
         .I_pxl_clk   (w_pixel_clk ),//40MHz      //65MHz      //74.25MHz    // 148.5MHz
         .I_rst_n     (r_rst_n    ),//800x600    //1024x768   //1280x720    // 1920x1080
@@ -32,9 +30,7 @@ module tb_framebuffer_reader;
         .I_vs_pol    (1'b1            ),// VS polarity, 0:Neg, 1:Pos
         .O_de        (w_out_de        ),
         .O_hs        (w_hsync         ),// deアサート中にはアサートされない？
-        .O_vs        (w_vsync         ),
-        .O_hb(w_hblank),
-        .O_vb(w_vblank)
+        .O_vs        (w_vsync         )
     );
 
     wire        w_psram_clk;
@@ -95,8 +91,8 @@ module tb_framebuffer_reader;
 
 
     framebuffer_reader u_dut(
-        .i_clk(w_psram_clk),
-        .i_rst_n(r_rst_n),
+        .i_psram_clk(w_psram_clk),
+        .i_psram_rst_n(r_rst_n),
 
     // Registers
         .i_reg_width(11'd1280),
@@ -104,24 +100,24 @@ module tb_framebuffer_reader;
         .i_reg_start_line(11'd20),
 
     // PSARM
-        .o_psram_cmd_req(w_psram_read_req),
-        .i_psram_cmd_gnt(w_psram_read_gnt),
+        .o_psram_req(w_psram_read_req),
+        .i_psram_gnt(w_psram_read_gnt),
         .o_psram_addr(w_psram_read_addr),
-        .i_psram_rd_data(64'h0123_4567_89ab_cdef/*w_psram_read_data*/),
-        .i_psram_rd_data_valid(w_psram_read_data_valid),
+        .i_psram_data(64'h0123_4567_89ab_cdef/*w_psram_read_data*/),
+        .i_psram_data_valid(w_psram_read_data_valid),
 
     // Video sync in
-        .i_pixel_clk(w_pixel_clk),
-        .i_pixel_rst_n(r_rst_n),
-        .i_hsync(w_hsync),
-        .i_vsync(w_vsync),
-        .i_active(w_out_de),
+        .i_video_clk(w_pixel_clk),
+        .i_video_rst_n(r_rst_n),
+        .i_video_hsync(w_hsync),
+        .i_video_vsync(w_vsync),
+        .i_video_active(w_out_de),
 
     // Video sync/data out
-        .o_rgb_data(),
-        .o_hsync(),
-        .o_vsync(),
-        .o_active()
+        .o_video_data(),
+        .o_video_hsync(),
+        .o_video_vsync(),
+        .o_video_active()
 );
 
     initial begin

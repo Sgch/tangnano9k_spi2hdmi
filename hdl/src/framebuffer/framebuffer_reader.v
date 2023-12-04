@@ -1,4 +1,7 @@
-module framebuffer_reader (
+module framebuffer_reader #(
+    parameter MAX_WIDTH = 2048,
+    parameter BURST = 32
+) (
     // Registers
     input   wire    [10:0]  i_reg_width,       // 横有効ピクセル(Max 2048, 32 align)
     input   wire    [10:0]  i_reg_start_line,  // 読み取り開始ライン(-1)
@@ -58,30 +61,17 @@ module framebuffer_reader (
     wire   w_read_line;
     assign w_read_line = (r_line_cnt >= i_reg_start_line) & (r_line_cnt < i_reg_end_line);
 
-    // PSRAM ステートマシーン
-    localparam ST_IDLE      = 2'd0;
-    localparam ST_READ_LINE = 2'd1;
-    reg [ 1:0] r_state;
-    reg [10:0] r_read_pixel_cnt;
-    always @(posedge i_psram_clk) begin
-        case (r_state)
-        ST_IDLE: begin
-            r_read_pixel_cnt <= 11'd0;
-
-            if (w_hsync_pls & w_read_line) begin
-                r_state <= ST_READ_LINE;
-            end
+    // ラインバースト回数カウント
+    localparam BURST_CNT_WIDTH = $clog2(MAX_WIDTH) - $clog2(BURST);
+    reg [BURST_CNT_WIDTH-1:0] r_burst_left;
+    always @(posedge i_psram_clk or negedge i_psram_rst_n) begin
+        if (!i_psram_rst_n) begin
+            r_burst_left <= 0;
+        end else if (w_hsync_pls && w_read_line) begin
+            r_burst_left <= i_reg_width[10:$clog2(BURST)];
+        end else if (i_psram_gnt) begin
+            r_burst_left <= r_burst_left - 1;
         end
-        ST_READ_LINE: begin
-            if (r_read_pixel_cnt >= i_reg_width) begin
-                r_state <= ST_IDLE;
-            end
-            else if (i_psram_gnt) begin
-                r_read_pixel_cnt <= r_read_pixel_cnt + 11'd32;
-            end
-        end
-        default: r_state <= ST_IDLE;
-        endcase
     end
 
     // PSRAM 読み出しアドレス
@@ -91,7 +81,7 @@ module framebuffer_reader (
             r_psram_addr <= 21'd0;
         end
         else if (i_psram_gnt) begin
-            r_psram_addr <= r_psram_addr + 21'd32;
+            r_psram_addr <= r_psram_addr + BURST;
         end
     end
     assign o_psram_addr = r_psram_addr;
@@ -106,7 +96,7 @@ module framebuffer_reader (
             if (w_hsync_pls & w_read_line) begin
                 r_psram_req <= 1'b1;
             end
-            else if (r_state == ST_READ_LINE & r_psram_req == 1'b0) begin
+            else if ((r_burst_left > 0) && !r_psram_req) begin
                 r_psram_req <= 1'b1;
             end
             else if (i_psram_gnt) begin
