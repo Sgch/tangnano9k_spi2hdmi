@@ -115,7 +115,7 @@ module inst_dec_reg (
     wire       w_on_end_args;
     assign     w_on_inst = i_spi_rxdone & ~r_dc;
     assign     w_on_args = i_spi_rxdone & r_dc;
-    assign     w_on_end_args = (r_inst_args_cnt == 5'd0);
+    assign     w_on_end_args = (r_inst_args_cnt == 4'd0);
     always @(posedge i_clk or negedge i_rst_n) begin
         if (~i_rst_n) begin
             r_dc <= 1'b0;
@@ -132,7 +132,7 @@ module inst_dec_reg (
                 r_inst_data[7:0] <= i_spi_data[7:0];
                 { r_dc, r_inst_args_varlen, r_inst_args_cnt } <= InstructionROM(i_spi_data);
             end else if (w_on_args) begin
-                r_inst_args_cnt <= r_inst_args_cnt - 5'd1;
+                r_inst_args_cnt <= r_inst_args_cnt - 4'd1;
                 if (w_on_end_args && !r_inst_args_varlen) begin
                     r_dc <= 1'b0;
                 end
