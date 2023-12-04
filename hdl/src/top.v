@@ -189,8 +189,6 @@ module top(
     wire    w_out_de;
     wire    w_hsync;
     wire    w_vsync;
-    wire    w_hblank;
-    wire    w_vblank;
     syn_gen u_syn_gen (
         .I_pxl_clk   (w_psram_clk ),//40MHz      //65MHz      //74.25MHz    // 148.5MHz
         .I_rst_n     (w_rst_n    ),//800x600    //1024x768   //1280x720    // 1920x1080
@@ -207,8 +205,9 @@ module top(
         .O_de        (w_out_de        ),
         .O_hs        (w_hsync         ),// deアサート中にはアサートされない？
         .O_vs        (w_vsync         ),
-        .O_hb(w_hblank),
-        .O_vb(w_vblank)
+        .I_rd_hres   (16'd0),
+        .I_rd_vres   (16'd0),
+        .O_rden      ()
     );
 
     wire [15:0] w_fb_reader_rgb565;
