@@ -50,11 +50,9 @@ module framebuffer_reader #(
     always @(posedge i_psram_clk or negedge i_psram_rst_n) begin
         if (!i_psram_rst_n) begin
             r_line_cnt <= 11'd0;
-        end
-        else if (w_vsync) begin
+        end else if (w_vsync) begin
             r_line_cnt <= 11'd0;
-        end
-        else if (w_hsync_pls) begin
+        end else if (w_hsync_pls) begin
             r_line_cnt <= r_line_cnt + 11'd1;
         end
     end
@@ -79,8 +77,7 @@ module framebuffer_reader #(
     always @(posedge i_psram_clk) begin
         if (w_vsync) begin
             r_psram_addr <= 21'd0;
-        end
-        else if (i_psram_gnt) begin
+        end else if (i_psram_gnt) begin
             r_psram_addr <= r_psram_addr + BURST;
         end
     end
@@ -91,17 +88,12 @@ module framebuffer_reader #(
     always @(posedge i_psram_clk or negedge i_psram_rst_n) begin
         if (!i_psram_rst_n) begin
             r_psram_req <= 1'b0;
-        end
-        else begin
-            if (w_hsync_pls & w_read_line) begin
-                r_psram_req <= 1'b1;
-            end
-            else if ((r_burst_left > 0) && !r_psram_req) begin
-                r_psram_req <= 1'b1;
-            end
-            else if (i_psram_gnt) begin
-                r_psram_req <= 1'b0;
-            end
+        end else if (w_hsync_pls && w_read_line) begin
+            r_psram_req <= 1'b1;
+        end else if ((r_burst_left > 0) && !r_psram_req) begin
+            r_psram_req <= 1'b1;
+        end else if (i_psram_gnt) begin
+            r_psram_req <= 1'b0;
         end
     end
     assign o_psram_req = r_psram_req;
@@ -109,12 +101,13 @@ module framebuffer_reader #(
     // ラインバッファ書き込みアドレス
     reg [8:0] r_dpram_write_addr;
     always @(posedge i_psram_clk or negedge i_psram_rst_n) begin
-        if (!i_psram_rst_n)
+        if (!i_psram_rst_n) begin
             r_dpram_write_addr <= 9'd0;
-        else if (w_hsync_pls)
+        end else if (w_hsync_pls) begin
             r_dpram_write_addr <= 9'd0;
-        else if (i_psram_data_valid)
+        end else if (i_psram_data_valid) begin
             r_dpram_write_addr <= r_dpram_write_addr + 9'd1;
+        end
     end
 
     // ラインバッファ
@@ -142,12 +135,13 @@ module framebuffer_reader #(
 
     // ラインバッファ読み出しアドレス
     always @(posedge i_video_clk or negedge i_video_rst_n) begin
-        if (!i_video_rst_n)
+        if (!i_video_rst_n) begin
             r_dpram_read_addr <= 11'd0;
-        else if (i_video_hsync)
+        end else if (i_video_hsync) begin
             r_dpram_read_addr <= 11'd0;
-        else if (i_video_active)
+        end else if (i_video_active) begin
             r_dpram_read_addr <= r_dpram_read_addr + 11'd1;
+        end
     end
 
     // ラインバッファ読み出しSyncディレイ (1clk delay)
