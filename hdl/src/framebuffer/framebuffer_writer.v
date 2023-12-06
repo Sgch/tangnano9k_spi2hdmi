@@ -2,233 +2,203 @@ module framebuffer_writer (
     input   wire            i_clk,
     input   wire            i_rst_n,
 
-    input   wire    [15:0]  i_pixel_data,   // 画素データ
-    input   wire    [31:0]  i_col_addr,     // XS15:0[31:16], XE15:0[15:0]
-    input   wire    [31:0]  i_row_addr,     // YS15:0[31:16], YE15:0[15:0]
     input   wire            i_sram_clr_req,
-    input   wire            i_sram_write_req,
+
+    input   wire    [31:0]  i_col_addr,
+    input   wire    [31:0]  i_row_addr,
     input   wire            i_sram_waddr_set_req,
 
+    input   wire    [15:0]  i_pixel_data,
+    input   wire            i_sram_write_req,
+    output  wire            o_fifo_full,
+
     input   wire            i_psram_clk,
-    output  wire            o_psram_write_req,
-    input   wire            i_psram_write_gnt,
+    input   wire            i_psram_rst_n,
+
+    output  wire            o_psram_req,
+    input   wire            i_psram_gnt,
     output  wire    [20:0]  o_psram_addr,
     output  wire    [63:0]  o_psram_data,
     output  wire    [ 7:0]  o_psram_data_mask
 );
-    wire w_fifo_write;
-    wire w_line_write_done;
-    fifo_writer u_fifo_writer(
-        .i_clk(i_clk),
-        .i_rst_n(i_rst_n),
+    localparam COLUMN_MAX = 2048;
+    localparam ROW_MAX    = 2048;
 
-        .i_start_x(i_col_addr[31:16]),
-        .i_end_x(i_col_addr[15:0]),
-        .i_sram_write_req(i_sram_write_req),
-        .i_sram_waddr_set_req(i_sram_waddr_set_req),
-        .o_fifo_write(w_fifo_write),
-        .o_line_write_done(w_line_write_done)
-    );
+    wire [$clog2(COLUMN_MAX)-1:0] w_sx;
+    wire [$clog2(COLUMN_MAX)-1:0] w_ex;
+    wire [$clog2(ROW_MAX)-1:0] w_sy;
+    wire [$clog2(ROW_MAX)-1:0] w_ey;
+    assign w_sx = i_col_addr[16+$clog2(COLUMN_MAX)-1:16];
+    assign w_ex = i_col_addr[   $clog2(COLUMN_MAX)-1: 0];
+    assign w_sy = i_row_addr[16+$clog2(ROW_MAX)-1:16];
+    assign w_ey = i_row_addr[   $clog2(ROW_MAX)-1: 0];
 
-    // FIFO
-    wire [15:0] w_fifo_read_data;
-    wire w_fifo_read;
-    sram_write_fifo_hs u_sram_fifo ( // 2048分のバッファー
-		.WrClk(i_clk),
-		.WrReset(~i_rst_n),
-		.Data(i_pixel_data),
-		.WrEn(w_fifo_write),
+    reg [$clog2(COLUMN_MAX)-1:0] r_col;
+    reg [$clog2(ROW_MAX)-1:0] r_row;
+    reg [20:0] r_sram_addr;
+    reg        r_fifo_write;
+    always @(posedge i_clk or negedge i_rst_n) begin
+        if (!i_rst_n) begin
+            r_col <= 0;
+            r_row <= 0;
+            r_sram_addr <= 21'd0;
+            r_fifo_write <= 1'b0;
+        end else if (i_sram_waddr_set_req) begin
+            r_col <= w_sx;
+            r_row <= w_sy;
+            r_fifo_write <= 1'b0;
+        end else if (i_sram_write_req) begin
+            r_col <= r_col + 1;
+            if (r_col >= w_ex) begin
+                r_col <= w_sx;
 
-		.RdClk(i_psram_clk),
-		.RdReset(~i_rst_n),
-		.RdEn(w_fifo_read),
-		.Q(w_fifo_read_data),
+                r_row <= r_row + 1;
+                if (r_row >= w_ey) begin
+                    r_row <= w_sy;
+                end
+            end
+            r_sram_addr <= (r_row * 21'd1280) + { 10'd0, r_col };
+            r_fifo_write <= 1'b1;
+        end else begin
+            r_fifo_write <= 1'b0;
+        end
+    end
 
-		.Empty(),
-		.Full()
+    reg  r_fifo_rd_en;
+    wire [20:0] w_fifo_rd_addr;
+    wire [15:0] w_fifo_rd_pixel;
+    wire w_fifo_empty;
+    framebuffer_writer_fifo u_fifo (
+        .WrClk(i_clk),
+        .WrReset(~i_rst_n),
+        .Data({ r_sram_addr, i_pixel_data }),
+        .WrEn(r_fifo_write),
+        .Full(o_fifo_full),
+
+        .RdClk(i_psram_clk),
+        .RdReset(~i_psram_rst_n),
+        .RdEn(r_fifo_rd_en),
+        .Q({ w_fifo_rd_addr, w_fifo_rd_pixel }),
+        .Empty(w_fifo_empty)
 	);
 
-    // CDC
-    reg [2:0] r_cdc_sram_waddr_set_ff;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_cdc_sram_waddr_set_ff <= 3'd0;
-        end
-        else begin
-            r_cdc_sram_waddr_set_ff <= { r_cdc_sram_waddr_set_ff[1:0], i_sram_waddr_set_req };
-        end
-    end
+    localparam [2:0] ST_IDLE      = 3'd0;
+    localparam [2:0] ST_FIFO_WAIT = 3'd1;
+    localparam [2:0] ST_WRITE_0   = 3'd2;
+    localparam [2:0] ST_WRITE_1   = 3'd3;
+    localparam [2:0] ST_WRITE     = 3'd4;
+    reg [2:0]  r_state;
 
-    reg [2:0] r_cdc_line_write_done_ff;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_cdc_line_write_done_ff <= 3'd0;
-        end
-        else begin
-            r_cdc_line_write_done_ff <= { r_cdc_line_write_done_ff[1:0], w_line_write_done };
-        end
-    end
+    reg        r_psram_req;
+    reg [15:0] r_psram_addr;
+    reg [15:0] r_psram_data;
+    reg [63:0] r_psram_data_mask;
+    reg [ 7:0] r_psram_burst_cnt;
+    always @(posedge i_psram_clk or negedge i_psram_rst_n) begin
+        if (!i_psram_rst_n) begin
+            r_state <= ST_IDLE;
 
-    // PSRAM clock domain
-    wire w_sram_waddr_set_pls;
-    assign w_sram_waddr_set_pls =  r_cdc_sram_waddr_set_ff[1] & ~r_cdc_sram_waddr_set_ff[2];
+            r_psram_req <= 1'b0;
+            r_psram_addr <= 16'd0;
+            r_psram_data <= 16'h0000;
+            r_psram_data_mask <= 64'd0;
 
-    wire w_line_write_done_pls;
-    assign w_line_write_done_pls =  r_cdc_line_write_done_ff[1] & ~r_cdc_line_write_done_ff[2];
+            r_psram_burst_cnt <= 8'd0;
 
-    // register latch
-    reg [10:0] r_sx;
-    reg [10:0] r_ex;
-    reg [10:0] r_sy;
-    reg [10:0] r_ey;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_sx <= 11'd0;
-            r_ex <= 11'd0;
-            r_sy <= 11'd0;
-            r_ey <= 11'd0;
-        end
-        else if (w_sram_waddr_set_pls) begin
-            r_sx <= i_col_addr[26:16];
-            r_ex <= i_col_addr[10: 0];
-            r_sy <= i_row_addr[26:16];
-            r_ey <= i_row_addr[10: 0];
-        end
-    end
+            r_fifo_rd_en <= 1'b0;
+        end else begin
+            case (r_state)
+            ST_IDLE: begin
+                if (!w_fifo_empty) begin
+                    r_state <= ST_FIFO_WAIT;
 
-    // packer
-    wire [5:0] w_packer_block_start_index; // 32区切りにおける先頭ブロックのindex (0〜39)
-    wire [5:0] w_packer_block_end_index;   // 32区切りにおける終端ブロックのindex (0〜39)
-    wire [4:0] w_packer_first_start_index; // 32区切りにおける先頭ブロック内の開始index
-    wire [4:0] w_packer_first_end_index;   // 32区切りにおける先頭ブロック内の終了index
-    wire [4:0] w_packer_last_end_index;    // 32区切りにおける終端ブロック内の終了index
-    assign w_packer_block_start_index = r_sx[10:5]; // div 32  (1280: 16'b0000_0101_0000_0000 => /32 => 40: 16'b0000_0000_0010_1000 => 6'b10_1000)
-    assign w_packer_block_end_index   = r_ex[10:5]; // div 32
-    assign w_packer_first_start_index = r_sx[ 4:0]; // mod 32
-    assign w_packer_last_end_index    = r_ex[ 4:0]; // mod 32
-    assign w_packer_first_end_index   = (w_packer_block_start_index == w_packer_block_end_index) ? w_packer_last_end_index : 5'd31;
-
-    // calc some registers
-    reg [3:0] r_step;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_step <= 4'b0000;
-        end
-        else if (w_sram_waddr_set_pls) begin
-            r_step <= 4'b0001;
-        end
-        else begin
-            r_step <= { r_step[2:0], 1'b0 };
-        end
-    end
-
-    reg [20:0] r_psram_line_head_base_addr; // PSRAMにおける先頭行のアドレス
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_psram_line_head_base_addr <= 21'd0;
-        end
-        else begin
-            case (r_step)
-            4'b0001: begin
-                r_psram_line_head_base_addr <= { r_sy, 10'd0 } + { 2'd0, r_sy, 8'd0 }; // NOTE: n*1280 = n*1024 + n*256
+                    r_fifo_rd_en <= 1'b1;
+                end else begin
+                    r_fifo_rd_en <= 1'b0;
+                end
+                r_psram_req <= 1'b0;
             end
-            4'b0010: begin
-                r_psram_line_head_base_addr <= r_psram_line_head_base_addr + { 10'd0, w_packer_block_start_index, 5'd0 }; // addr = sy*1280 + floor(sx/32)*32;
+            ST_FIFO_WAIT: begin
+                r_fifo_rd_en <= 1'b0;
+                r_state <= ST_WRITE_0;
             end
-            default: ; // nothing to do
+            ST_WRITE_0: begin
+                r_state <= ST_WRITE_1;
+
+                // burst #0
+                r_psram_req <= 1'b1;
+                r_psram_addr <= w_fifo_rd_addr[20:5];
+                r_psram_data <= w_fifo_rd_pixel;
+                r_psram_data_mask <= MaskTable(w_fifo_rd_addr[4:0]);
+
+                r_psram_burst_cnt <= 8'd1;
+            end
+            ST_WRITE_1: begin
+                if (i_psram_gnt) begin
+                    r_state <= ST_WRITE;
+
+                    // burst #1
+                    r_psram_req <= 1'b0;
+                    r_psram_data_mask <= { 8'h00, r_psram_data_mask[63:8] };
+                    r_psram_burst_cnt <= { r_psram_burst_cnt[6:0], 1'b0 };
+                end
+            end
+            ST_WRITE: begin
+                // burst #2~7
+                r_psram_data_mask <= { 8'h00, r_psram_data_mask[63:8] };
+                r_psram_burst_cnt <= { r_psram_burst_cnt[6:0], 1'b0 };
+
+                if (r_psram_burst_cnt[7]) begin
+                    r_state <= ST_IDLE;
+                end
+            end
+            default: r_state <= ST_IDLE;
             endcase
         end
     end
+    assign o_psram_req  = r_psram_req;
+    assign o_psram_addr = { r_psram_addr, 5'd0 };
+    assign o_psram_data = { r_psram_data, r_psram_data, r_psram_data, r_psram_data};
+    assign o_psram_data_mask = ~r_psram_data_mask[7:0];
 
-    // Packer
-    wire w_packer_done;
-
-    reg [5:0] r_packer_count; // 32区分けカウント
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_packer_count <= 6'd0;
-        end
-        else if (w_line_write_done_pls) begin
-            r_packer_count <= w_packer_block_start_index;
-        end
-        else if (w_packer_done) begin
-            r_packer_count <= r_packer_count + 6'd1;
-        end
+    function [63:0] MaskTable(input [4:0] addr);
+    begin
+        case (addr)
+        5'd0 :   MaskTable = 64'h00_00_00_00_00_00_00_11;
+        5'd1 :   MaskTable = 64'h00_00_00_00_00_00_00_22;
+        5'd2 :   MaskTable = 64'h00_00_00_00_00_00_00_44;
+        5'd3 :   MaskTable = 64'h00_00_00_00_00_00_00_88;
+        5'd4 :   MaskTable = 64'h00_00_00_00_00_00_11_00;
+        5'd5 :   MaskTable = 64'h00_00_00_00_00_00_22_00;
+        5'd6 :   MaskTable = 64'h00_00_00_00_00_00_44_00;
+        5'd7 :   MaskTable = 64'h00_00_00_00_00_00_88_00;
+        5'd8 :   MaskTable = 64'h00_00_00_00_00_11_00_00;
+        5'd9 :   MaskTable = 64'h00_00_00_00_00_22_00_00;
+        5'd10:   MaskTable = 64'h00_00_00_00_00_44_00_00;
+        5'd11:   MaskTable = 64'h00_00_00_00_00_88_00_00;
+        5'd12:   MaskTable = 64'h00_00_00_00_11_00_00_00;
+        5'd13:   MaskTable = 64'h00_00_00_00_22_00_00_00;
+        5'd14:   MaskTable = 64'h00_00_00_00_44_00_00_00;
+        5'd15:   MaskTable = 64'h00_00_00_00_88_00_00_00;
+        5'd16:   MaskTable = 64'h00_00_00_11_00_00_00_00;
+        5'd17:   MaskTable = 64'h00_00_00_22_00_00_00_00;
+        5'd18:   MaskTable = 64'h00_00_00_44_00_00_00_00;
+        5'd19:   MaskTable = 64'h00_00_00_88_00_00_00_00;
+        5'd20:   MaskTable = 64'h00_00_11_00_00_00_00_00;
+        5'd21:   MaskTable = 64'h00_00_22_00_00_00_00_00;
+        5'd22:   MaskTable = 64'h00_00_44_00_00_00_00_00;
+        5'd23:   MaskTable = 64'h00_00_88_00_00_00_00_00;
+        5'd24:   MaskTable = 64'h00_11_00_00_00_00_00_00;
+        5'd25:   MaskTable = 64'h00_22_00_00_00_00_00_00;
+        5'd26:   MaskTable = 64'h00_44_00_00_00_00_00_00;
+        5'd27:   MaskTable = 64'h00_88_00_00_00_00_00_00;
+        5'd28:   MaskTable = 64'h11_00_00_00_00_00_00_00;
+        5'd29:   MaskTable = 64'h22_00_00_00_00_00_00_00;
+        5'd30:   MaskTable = 64'h44_00_00_00_00_00_00_00;
+        5'd31:   MaskTable = 64'h88_00_00_00_00_00_00_00;
+        default: MaskTable = 64'h00_00_00_00_00_00_00_00;
+        endcase
     end
-
-    reg r_packer_start;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_packer_start <= 1'b0;
-        end
-        else if (w_line_write_done_pls) begin // 始動のキッカケ
-            r_packer_start <= 1'b1;
-        end
-        else if (w_packer_done && r_packer_count < w_packer_block_end_index) begin
-            r_packer_start <= 1'b1;
-        end
-         else begin
-            r_packer_start <= 1'b0;
-        end
-    end
-
-    reg [4:0] r_packer_start_index;
-    reg [4:0] r_packer_end_index;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_packer_start_index <= 5'd0;
-            r_packer_end_index <= 5'd0;
-        end
-        else if (r_packer_count == 0 && w_line_write_done_pls) begin // 先頭ブロック
-            r_packer_start_index <= w_packer_first_start_index;
-            r_packer_end_index   <= w_packer_first_end_index;
-        end else if (w_packer_done) begin
-            if (r_packer_count == w_packer_block_end_index) begin // 後尾ブロック
-                r_packer_start_index <= 5'd0;
-                r_packer_end_index   <= w_packer_last_end_index;
-            end else begin // 途中ブロック
-                r_packer_start_index <= 5'd0;
-                r_packer_end_index   <= 5'd31;
-            end
-        end
-    end
-
-    packer u_packer (
-        .i_clk(i_psram_clk),
-        .i_rst_n(i_rst_n),
-
-        .i_start_index(r_packer_start_index),
-        .i_end_index(r_packer_end_index),
-
-        .i_start(r_packer_start),
-        .o_done(w_packer_done),
-
-        .o_data_read(w_fifo_read),
-        .i_data(w_fifo_read_data),
-
-        .o_psram_write_req(o_psram_write_req),
-        .i_psram_write_gnt(i_psram_write_gnt),
-        .o_psram_data(o_psram_data),
-        .o_psram_data_mask(o_psram_data_mask)
-    );
-
-    // PSRAM 書き込み
-    reg [20:0] r_psram_addr;
-    always @(posedge i_psram_clk or negedge i_rst_n) begin
-        if (!i_rst_n) begin
-            r_psram_addr <= 21'd0;
-        end
-        else if (r_packer_count == 0 && w_line_write_done_pls) begin // ライン 先頭ブロック
-            r_psram_addr <= r_psram_line_head_base_addr;
-        end
-        else if (w_packer_done && r_packer_count == w_packer_block_end_index) begin
-            r_psram_addr <= r_psram_addr + 21'd1280;
-        end
-        else if (w_packer_done) begin
-            r_psram_addr <= r_psram_addr + 21'd32; // 1バースト分進める
-        end
-    end
-    assign o_psram_addr = r_psram_addr;
-
+    endfunction
 
 endmodule

@@ -6,6 +6,7 @@ hdl/ip/
 !hdl/ip/psram_memory_interface_hs/psram_memory_interface_hs.ipc
 !hdl/ip/psram_rpll/psram_rpll.ipc
 !hdl/ip/sram_write_fifo_hs/sram_write_fifo_hs.ipc
+!hdl/ip/framebuffer_writer_fifo/framebuffer_writer_fifo.ipc
 
 # Project
 prj/impl/

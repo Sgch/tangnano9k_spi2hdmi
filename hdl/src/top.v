@@ -60,7 +60,7 @@ module top(
     wire       w_spi_csrelased;
     wire       w_spi_rxdone;
     spi_slave u_spi_slave(
-        .i_clk(w_psram_clk),
+        .i_clk(XTAL27M),
         .i_rst_n(w_rst_n),
 
         .i_spi_clk(SPI_SCK),
@@ -80,7 +80,7 @@ module top(
     wire w_sram_write_req;
     wire w_sram_waddr_set_req;
     inst_dec_reg u_command_dec(
-        .i_clk(w_psram_clk),
+        .i_clk(XTAL27M),
         .i_rst_n(w_rst_n),
 
         .i_spi_data(w_spi_data),
@@ -102,8 +102,9 @@ module top(
     wire [20:0] w_fb_write_addr;
     wire [63:0] w_fb_write_data;
     wire  [7:0] w_fb_write_data_mask;
-    framebuffer_writer u_dut(
-        .i_clk(w_psram_clk),
+    wire        w_fb_write_fifo_full;
+    framebuffer_writer u_writer(
+        .i_clk(XTAL27M),
         .i_rst_n(w_rst_n),
 
         .i_pixel_data(w_pixel_data),   // 画素データ
@@ -112,13 +113,15 @@ module top(
         .i_sram_clr_req(w_sram_clr_req),
         .i_sram_write_req(w_sram_write_req),
         .i_sram_waddr_set_req(w_sram_waddr_set_req),
+        .o_fifo_full(w_fb_write_fifo_full),
 
         .i_psram_clk(w_psram_clk),
+        .i_psram_rst_n(w_rst_n),
         .o_psram_addr(w_fb_write_addr),
         .o_psram_data(w_fb_write_data),
         .o_psram_data_mask(w_fb_write_data_mask),
-        .o_psram_write_req(w_fb_write_req),
-        .i_psram_write_gnt(w_fb_write_gnt)
+        .o_psram_req(w_fb_write_req),
+        .i_psram_gnt(w_fb_write_gnt)
     );
 
     wire        w_psram_cmd;
@@ -260,10 +263,12 @@ module top(
 		.O_tmds_data_p(TMDS_DATA_P),
 		.O_tmds_data_n(TMDS_DATA_N)
 	);
-    assign ONB_LED[0] = w_pll_dvitx_locked;
-    assign ONB_LED[1] = ONB_SW[0];
-    assign ONB_LED[2] = ONB_SW[1];
-    assign ONB_LED[5:3] = 3'b111;
+    assign ONB_LED[0] = (w_pll_dvitx_locked & w_memory_clk_locked);
+    assign ONB_LED[1] = ~w_sram_write_req;
+    assign ONB_LED[2] = ~w_fb_write_gnt;
+    assign ONB_LED[3] = ~w_fb_write_fifo_full;
+    assign ONB_LED[4] = ~w_fb_read_gnt;
+    assign ONB_LED[5] = 1'b1;
 
 
 endmodule
