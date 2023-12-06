@@ -15,15 +15,12 @@ set_option -use_mspi_as_gpio 1
 add_file -type verilog [file normalize ${IP_DIR}/dvi_tx/dvi_tx.v]
 add_file -type verilog [file normalize ${IP_DIR}/framebuffer_reader_dpb/framebuffer_reader_dpb.v]
 add_file -type verilog [file normalize ${IP_DIR}/psram_memory_interface_hs/psram_memory_interface_hs.v]
-add_file -type verilog [file normalize ${IP_DIR}/sram_write_fifo_hs/sram_write_fifo_hs.v]
 add_file -type verilog [file normalize ${IP_DIR}/framebuffer_writer_fifo/framebuffer_writer_fifo.v]
 add_file -type verilog [file normalize ${IP_DIR}/dvi_rpll/dvi_rpll.v]
 add_file -type verilog [file normalize ${IP_DIR}/psram_rpll/psram_rpll.v]
 
 add_file -type verilog [file normalize ${SRC_DIR}/framebuffer/framebuffer_reader.v]
 add_file -type verilog [file normalize ${SRC_DIR}/framebuffer/framebuffer_writer.v]
-add_file -type verilog [file normalize ${SRC_DIR}/framebuffer/fifo_writer.v]
-add_file -type verilog [file normalize ${SRC_DIR}/framebuffer/packer.v]
 
 add_file -type verilog [file normalize ${SRC_DIR}/spi/inst_dec_reg.v]
 add_file -type verilog [file normalize ${SRC_DIR}/spi/spi_slave.v]
