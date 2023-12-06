@@ -224,21 +224,26 @@ module inst_dec_reg (
     assign o_pixel_data      = r_mosi_16_pixel_data;
 
     // ram write counter
-    wire [31:0] w_sram_write_len;
-    assign      w_sram_write_len = (o_col_addr[15:0] - o_col_addr[31:16] + 16'd1) * (o_row_addr[15:0] - o_row_addr[31:16] + 16'd1) - 32'd1;
-    reg  [31:0] r_sram_write_left;
+    wire [10:0] w_sram_col_len; // 0-2047
+    wire [10:0] w_sram_row_len; // 0-2047
+    assign      w_sram_col_len = (o_col_addr[10:0] - o_col_addr[26:16] + 11'd1);
+    assign      w_sram_row_len = (o_row_addr[10:0] - o_row_addr[26:16] + 11'd1);
+    wire [21:0] w_sram_write_len;
+    assign      w_sram_write_len = w_sram_col_len * w_sram_row_len - 22'd1;
+
+    reg  [20:0] r_sram_write_left;
     reg         r_sram_write_done;
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
-            r_sram_write_left <= 32'd0;
+            r_sram_write_left <= 21'd0;
             r_sram_write_done <= 1'b0;
         end else if (w_on_inst && (i_spi_data == CMD_RAMWR)) begin
-            r_sram_write_left <= w_sram_write_len;
+            r_sram_write_left <= w_sram_write_len[20:0]; // log2(1920 * 1080) < 21
             r_sram_write_done <= 1'b0;
         end else if (w_on_args && (r_inst_data == CMD_RAMWR)) begin
             if (r_pixel_data_fin) begin
-                r_sram_write_left <= r_sram_write_left - 32'd1;
-                if (r_sram_write_left == 32'd0) begin
+                r_sram_write_left <= r_sram_write_left - 21'd1;
+                if (r_sram_write_left == 21'd0) begin
                     r_sram_write_done <= 1'b1;
                 end
             end
